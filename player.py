@@ -11,15 +11,18 @@ from mutagen.flac import FLAC
 class Application(Frame):
     """Application that loads and play music"""
     def __init__(self, master):
+        pygame.mixer.init()
         super().__init__(master)
-        self.pack()
         self.master.title("ProMCS")
         self.master.geometry("400x310")
+
         self.create_menu()
         self.create_frames()
-        self.files = {}
-        pygame.mixer.init()
+
         self.paused = False
+        self.files = {}
+        self.song_index = 1
+        self.song_list = []
 
     def create_menu(self):
         """Design menu bar"""
@@ -83,46 +86,6 @@ class Application(Frame):
         img = ImageTk.PhotoImage(img)
         return img
 
-    def play(self):
-        """Play selected music"""
-        selected = self.files[self.listbox.selection_get()]
-        pygame.mixer.music.load(selected)
-        pygame.mixer.music.play(loops=0)
-        self.play_time()
-
-    def next(self):
-        """Play next music on the playlist"""
-        current = self.listbox.curselection()[0]
-        if current < self.listbox.size() - 1:
-            self.listbox.selection_clear(current)
-            self.listbox.activate(current+1)
-            self.listbox.select_set(current+1)
-            self.play()
-
-    def previous(self):
-        """Play previous music on the playlist"""
-        current = self.listbox.curselection()[0]
-        if current > 0:
-            self.listbox.selection_clear(current)
-            self.listbox.activate(current-1)
-            self.listbox.select_set(current-1)
-            selected = self.files[self.listbox.selection_get()]
-            pygame.mixer.music.load(selected)
-            pygame.mixer.music.play(loops=0)
-
-    def pause(self):
-        """Pause or unpause the music"""
-        if not self.paused:
-            pygame.mixer.music.pause()
-            self.paused = True
-        else:
-            pygame.mixer.music.unpause()
-            self.paused = False
-
-    def stop(self):
-        """Stop music"""
-        pygame.mixer.music.stop()
-
     def add_song(self):
         """Open dialogbox, chose one file and load it"""
         start_path = pathlib.Path().absolute()
@@ -148,15 +111,16 @@ class Application(Frame):
                        ("all files", "*")))
 
         self.files.update({os.path.basename(song): song for song in songs})
-        self.listbox.insert("end", *self.files.keys())
 
-        # for song in songs:
-        #     self.files.append({'index': ...,
-        #                        'name': ...,
-        #                        'path': ...,
-        #                        'flac_object': ...,
-        #                        'length': ...,
-        #                        'flength': ...})
+        for index, song in enumerate(songs):
+            self.song_list.append({'index': index,
+                                   'name': os.path.splitext(os.path.basename(song))[0],
+                                   'path': song,
+                                   'flac_object': FLAC(song),
+                                   'length': FLAC(song).info.length,
+                                   'flength': time.strftime('%M:%S', time.gmtime(round(FLAC(song).info.length)))})
+
+        self.listbox.insert("end", *[song['name'] for song in self.song_list])
 
     def remove_song(self):
         """Pick a song from listbox and remove it"""
@@ -168,36 +132,88 @@ class Application(Frame):
         self.listbox.delete(0, "end")
         pygame.mixer.music.stop()
 
-    def play_time(self):
-        # Get current song name
-        current_song_name = self.listbox.selection_get()
-        # Get current song path
-        current_song_path = self.files[self.listbox.selection_get()]
-        # Create current song flac object based on its path
-        current_song_object = FLAC(current_song_path)
-        # Get current song length
-        current_song_length = current_song_object.info.length
-        # Get current song length
-        current_song_length_formated = time.strftime('%M:%S', time.gmtime(current_song_length))
-        # Get current position of a song - rounded to seconds
-        current_song_position = round(pygame.mixer.music.get_pos()/1000)
-        # Convert current position to Minutes:Seconds format
-        current_song_position_formated = time.strftime('%M:%S', time.gmtime(current_song_position))
+    def get_song(self):
+        song_to_play_index = self.listbox.curselection()[0]
+        return self.song_list[song_to_play_index]
 
-        self.slider.config(to=current_song_length)
-        current_song_slider_time = self.slider.get()
-        self.slider.config(value=current_song_position)
+    def play(self):
+        """Play selected song"""
+        # get active song
+        song_to_play = self.get_song()
 
-        print(current_song_position, current_song_position_formated, current_song_slider_time)
+        # load and play song
+        pygame.mixer.music.load(song_to_play['path'])
+        pygame.mixer.music.play(loops=0)
 
-        if current_song_slider_time == current_song_position:
-            print(True)
+        # set slider top value
+        self.slider.config(to=song_to_play['length'])
 
-        if current_song_position >= round(current_song_length):
-            self.next()
+        self.song_time(song_to_play)
 
-        self.info_label.config(text=f"{current_song_position_formated} of {current_song_length_formated}")
-        self.info_label.after(1000, self.play_time)
+    def next(self):
+        """Play next song on the playlist"""
+        current = self.listbox.curselection()[0]
+        if current < self.listbox.size() - 1:
+            self.listbox.selection_clear(current)
+            self.listbox.activate(current+1)
+            self.listbox.select_set(current+1)
+            self.play()
+
+    def previous(self):
+        """Play previous song on the playlist"""
+        current = self.listbox.curselection()[0]
+        if current > 0:
+            self.listbox.selection_clear(current)
+            self.listbox.activate(current-1)
+            self.listbox.select_set(current-1)
+            selected = self.files[self.listbox.selection_get()]
+            pygame.mixer.music.load(selected)
+            pygame.mixer.music.play(loops=0)
+
+    def pause(self):
+        """Pause or unpause the song"""
+        if not self.paused:
+            pygame.mixer.music.pause()
+            self.paused = True
+        else:
+            pygame.mixer.music.unpause()
+            self.paused = False
+
+    def stop(self):
+        """Stop song"""
+        pygame.mixer.music.stop()
+
+    def song_time(self, song):
+        # Song parameters
+        index, name, path, flac_object, length, flength = song.values()
+        print(pygame.mixer.music.get_pos())
+        # self.song_index += 1
+        # pygame.mixer.music.load(song['path'])
+        # pygame.mixer.music.play(loops=0, start=self.song_index)
+        # print(pygame.mixer.music.get_pos())
+        # Get song position
+        # position = round(pygame.mixer.music.get_pos()/1000)
+        # fposition = time.strftime('%M:%S', time.gmtime(position))
+        # # Get current
+        # slider_time = self.slider.get()
+        # self.slider.config(value=position)
+        #
+        # print(position, fposition, slider_time)
+        #
+        # if slider_time == position:
+        #     pass
+        # else:
+        #     pygame.mixer.music.play(loops=0, start=slider_time)
+        #     position = slider_time
+        #     self.slider.config(value=position)
+        #
+        #     fposition = time.strftime('%M:%S', time.gmtime(position))
+        #
+        # self.info_label.config(text=f"{fposition} of {flength}")
+        self.info_label.after(1000, lambda: self.song_time(song))
+
+        # if position >= round(length):
+        #     self.next()
 
 
 if __name__ == '__main__':
