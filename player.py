@@ -6,20 +6,22 @@ import pygame
 from PIL import Image, ImageTk
 import time
 from mutagen.flac import FLAC
+import pickle
 
 
-class Application(Frame):
+class MusicPlayer(Frame):
     """Application that loads and play music"""
     def __init__(self, master):
         pygame.mixer.init()
         super().__init__(master)
         self.master.title("ProMCS")
-        self.master.geometry("400x310")
+        self.master.geometry("500x310")
 
         self.create_menu()
         self.create_frames()
 
         self.paused = False
+        self.stopped = False
         self.files = {}
         self.song_index = 1
         self.song_list = []
@@ -30,6 +32,8 @@ class Application(Frame):
 
         # Menu that gives functions to add music
         self.add_menu = Menu(self.my_menu)
+        self.add_menu.add_command(label="Load last list", command=self.load_list)
+        self.add_menu.add_separator()
         self.add_menu.add_command(label="Add one song", command=self.add_song)
         self.add_menu.add_command(label="Add many songs", command=self.add_songs)
 
@@ -47,13 +51,30 @@ class Application(Frame):
     def create_frames(self):
         """Create all frames and images"""
         self.list_frame = Frame(self.master)
-        self.list_frame.pack(fill=X)
-        self.listbox = Listbox(self.list_frame, bg='black', fg='green', selectbackground='gray', selectforeground='black', selectmode=EXTENDED)
+        self.list_frame.grid(row=0, column=0)
+        self.volume_frame = LabelFrame(self.master, text="Volume")
+        self.volume_frame.grid(row=0, column=1, rowspan=2)
+
+        global vol_img_1, vol_img_2, vol_img_3, vol_img_4, vol_img_5
+        vol_img_1 = self.create_image(f'img/volume1.png', 0)
+        vol_img_2 = self.create_image(f'img/volume2.png', 0)
+        vol_img_3 = self.create_image(f'img/volume3.png', 0)
+        vol_img_4 = self.create_image(f'img/volume4.png', 0)
+        vol_img_5 = self.create_image(f'img/volume5.png', 0)
+
+        self.volume_slider = ttk.Scale(self.volume_frame, value=1, from_=1, to=0, orient=VERTICAL, command=self.volume, length=200)
+        self.volume_slider.grid(row=1, column=0)
+        self.volume_label = Label(self.volume_frame, text=f"{(self.volume_slider.get()):.02f}", anchor='center')
+        self.volume_label.grid(row=0, column=0)
+        self.volume_image = Label(self.volume_frame, image=vol_img_5, anchor=S)
+        self.volume_image.grid(row=2, column=0, sticky=S)
+
+        self.listbox = Listbox(self.list_frame, bg='black', fg='green', selectbackground='gray', selectforeground='black', selectmode=EXTENDED, width=48)
         self.listbox.pack(fill=X, padx=20, pady=(20, 0))
-        self.slider = ttk.Scale(self.list_frame, value=0, from_=0, to=100, orient=HORIZONTAL)
+        self.slider = ttk.Scale(self.list_frame, value=0, from_=0, to=100, orient=HORIZONTAL, command=self.slide)
         self.slider.pack(fill=X, padx=20)
         self.btn_frame = Frame(self.master)
-        self.btn_frame.pack(fill=X, padx=20)
+        self.btn_frame.grid(row=1, column=0, padx=20)
 
         # setting images
         global img_1, img_2, img_3, img_4, img_5
@@ -74,8 +95,8 @@ class Application(Frame):
             self.btn.grid(row=0, column=index, sticky=N+S+E+W, padx=8)
 
         self.info_frame = Frame(self.master)
-        self.info_frame.pack(fill=X, side=BOTTOM)
-        self.info_label = Label(self.info_frame, text="", relief=SUNKEN, anchor=E)
+        self.info_frame.grid(row=2, column=0, sticky=S)
+        self.info_label = Label(self.info_frame, text="", relief=SUNKEN, anchor=E, width=48)
         self.info_label.pack(fill=X)
 
     @staticmethod
@@ -85,6 +106,15 @@ class Application(Frame):
         img = img.resize((50, 50))
         img = ImageTk.PhotoImage(img)
         return img
+
+    def load_list(self):
+        try:
+            with open('last_list.pkl', 'rb') as f:
+                self.song_list = pickle.load(f)
+                self.listbox.insert("end", *[song['name'] for song in self.song_list])
+        except:
+            pass
+
 
     def add_song(self):
         """Open dialogbox, chose one file and load it"""
@@ -121,14 +151,18 @@ class Application(Frame):
                                    'flength': time.strftime('%M:%S', time.gmtime(round(FLAC(song).info.length)))})
 
         self.listbox.insert("end", *[song['name'] for song in self.song_list])
+        with open('last_list.pkl', 'wb') as f:
+            pickle.dump(self.song_list, f)
 
     def remove_song(self):
         """Pick a song from listbox and remove it"""
+        self.stop()
         self.listbox.delete("anchor")
         pygame.mixer.music.stop()
 
     def remove_songs(self):
         """Remove all songs from listbox"""
+        self.stop()
         self.listbox.delete(0, "end")
         pygame.mixer.music.stop()
 
@@ -138,6 +172,8 @@ class Application(Frame):
 
     def play(self):
         """Play selected song"""
+        self.stopped = False
+
         # get active song
         song_to_play = self.get_song()
 
@@ -146,8 +182,6 @@ class Application(Frame):
         pygame.mixer.music.play(loops=0)
 
         # set slider top value
-        self.slider.config(to=song_to_play['length'])
-
         self.song_time(song_to_play)
 
     def next(self):
@@ -181,42 +215,65 @@ class Application(Frame):
 
     def stop(self):
         """Stop song"""
+        # Reset slider
+        self.slider.config(value=0)
         pygame.mixer.music.stop()
+        self.info_label.config(text='')
+
+        # Set stop variable
+        self.stopped = True
+
+    def slide(self, event):
+        # position = int(self.slider.get())
+        # fposition = time.strftime('%M:%S', time.gmtime(position))
+        # self.info_label.config(text=f"{fposition} of {song_to_play['flength']}")
+
+        song_to_play = self.get_song()
+        pygame.mixer.music.load(song_to_play['path'])
+        pygame.mixer.music.play(loops=0, start=int(self.slider.get()))
+
+    def volume(self, event):
+        volume_level = self.volume_slider.get()
+        pygame.mixer.music.set_volume(volume_level)
+        self.volume_label.config(text=f"{volume_level:.02f}")
+
+        if volume_level == 0: self.volume_image.config(image=vol_img_1)
+        elif volume_level <= .25: self.volume_image.config(image=vol_img_2)
+        elif volume_level <= .50: self.volume_image.config(image=vol_img_3)
+        elif volume_level <= .75: self.volume_image.config(image=vol_img_4)
+        elif volume_level <= 1: self.volume_image.config(image=vol_img_5)
 
     def song_time(self, song):
+        if self.stopped:
+            return
         # Song parameters
         index, name, path, flac_object, length, flength = song.values()
-        print(pygame.mixer.music.get_pos())
-        # self.song_index += 1
-        # pygame.mixer.music.load(song['path'])
-        # pygame.mixer.music.play(loops=0, start=self.song_index)
-        # print(pygame.mixer.music.get_pos())
-        # Get song position
-        # position = round(pygame.mixer.music.get_pos()/1000)
-        # fposition = time.strftime('%M:%S', time.gmtime(position))
-        # # Get current
-        # slider_time = self.slider.get()
-        # self.slider.config(value=position)
-        #
-        # print(position, fposition, slider_time)
-        #
-        # if slider_time == position:
-        #     pass
-        # else:
-        #     pygame.mixer.music.play(loops=0, start=slider_time)
-        #     position = slider_time
-        #     self.slider.config(value=position)
-        #
-        #     fposition = time.strftime('%M:%S', time.gmtime(position))
-        #
-        # self.info_label.config(text=f"{fposition} of {flength}")
-        self.info_label.after(1000, lambda: self.song_time(song))
 
-        # if position >= round(length):
-        #     self.next()
+        position = int(pygame.mixer.music.get_pos() / 1000)
+        fposition = time.strftime('%M:%S', time.gmtime(position))
+
+        slider_time = int(self.slider.get())
+
+        print(slider_time, position)
+
+        position += 1
+        if slider_time == int(length):
+            pass
+        elif slider_time == position:
+            self.slider.config(to=length, value=position)
+        elif self.paused:
+            pass
+        else:
+            self.slider.config(to=length, value=slider_time)
+            fposition = time.strftime('%M:%S', time.gmtime(slider_time))
+            self.info_label.config(text=f"{fposition} of {flength}")
+            next_time = slider_time + 1
+            self.slider.config(to=length, value=next_time)
+
+        self.info_label.after(1000, lambda: self.song_time(song))
 
 
 if __name__ == '__main__':
     root = Tk()
-    app = Application(master=root)
+    app = MusicPlayer(master=root)
     app.mainloop()
