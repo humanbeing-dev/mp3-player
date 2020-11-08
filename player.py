@@ -54,6 +54,8 @@ class MusicPlayer(Frame):
         self.list_frame.grid(row=0, column=0)
         self.volume_frame = LabelFrame(self.master, text="Volume")
         self.volume_frame.grid(row=0, column=1, rowspan=2)
+        self.btn_frame = Frame(self.master)
+        self.btn_frame.grid(row=1, column=0, padx=20)
 
         global vol_img_1, vol_img_2, vol_img_3, vol_img_4, vol_img_5
         vol_img_1 = self.create_image(f'img/volume1.png', 0)
@@ -62,7 +64,7 @@ class MusicPlayer(Frame):
         vol_img_4 = self.create_image(f'img/volume4.png', 0)
         vol_img_5 = self.create_image(f'img/volume5.png', 0)
 
-        self.volume_slider = ttk.Scale(self.volume_frame, value=1, from_=1, to=0, orient=VERTICAL, command=self.volume, length=200)
+        self.volume_slider = ttk.Scale(self.volume_frame, value=.25, from_=1, to=0, orient=VERTICAL, command=self.volume, length=200)
         self.volume_slider.grid(row=1, column=0)
         self.volume_label = Label(self.volume_frame, text=f"{(self.volume_slider.get()):.02f}", anchor='center')
         self.volume_label.grid(row=0, column=0)
@@ -73,8 +75,6 @@ class MusicPlayer(Frame):
         self.listbox.pack(fill=X, padx=20, pady=(20, 0))
         self.slider = ttk.Scale(self.list_frame, value=0, from_=0, to=100, orient=HORIZONTAL, command=self.slide)
         self.slider.pack(fill=X, padx=20)
-        self.btn_frame = Frame(self.master)
-        self.btn_frame.grid(row=1, column=0, padx=20)
 
         # setting images
         global img_1, img_2, img_3, img_4, img_5
@@ -108,13 +108,9 @@ class MusicPlayer(Frame):
         return img
 
     def load_list(self):
-        try:
-            with open('last_list.pkl', 'rb') as f:
-                self.song_list = pickle.load(f)
-                self.listbox.insert("end", *[song['name'] for song in self.song_list])
-        except:
-            pass
-
+        with open('last_list.pkl', 'rb') as f:
+            self.song_list = pickle.load(f)
+            self.listbox.insert("end", *[song['name'] for song in self.song_list])
 
     def add_song(self):
         """Open dialogbox, chose one file and load it"""
@@ -126,9 +122,8 @@ class MusicPlayer(Frame):
                        ("mp3 files", "*.mp3"),
                        ("all files", "*")))
 
-        key = os.path.basename(song)
-        self.files[key] = song
-        self.listbox.insert("end", key)
+        self.update_playlist(song)
+        self.listbox.insert("end", self.song_list[-1]['name'])
 
     def add_songs(self):
         """Open dialogbox, chose multiple files and load them"""
@@ -140,19 +135,19 @@ class MusicPlayer(Frame):
                        ("mp3 files", "*.mp3"),
                        ("all files", "*")))
 
-        self.files.update({os.path.basename(song): song for song in songs})
-
-        for index, song in enumerate(songs):
-            self.song_list.append({'index': index,
-                                   'name': os.path.splitext(os.path.basename(song))[0],
-                                   'path': song,
-                                   'flac_object': FLAC(song),
-                                   'length': FLAC(song).info.length,
-                                   'flength': time.strftime('%M:%S', time.gmtime(round(FLAC(song).info.length)))})
+        for song in songs:
+            self.update_playlist(song)
 
         self.listbox.insert("end", *[song['name'] for song in self.song_list])
         with open('last_list.pkl', 'wb') as f:
             pickle.dump(self.song_list, f)
+
+    def update_playlist(self, song):
+        self.song_list.append({'name': os.path.splitext(os.path.basename(song))[0],
+                               'path': song,
+                               'flac_object': FLAC(song),
+                               'length': FLAC(song).info.length,
+                               'flength': time.strftime('%M:%S', time.gmtime(round(FLAC(song).info.length)))})
 
     def remove_song(self):
         """Pick a song from listbox and remove it"""
@@ -167,22 +162,24 @@ class MusicPlayer(Frame):
         pygame.mixer.music.stop()
 
     def get_song(self):
-        song_to_play_index = self.listbox.curselection()[0]
-        return self.song_list[song_to_play_index]
+        try:
+            song_to_play_index = self.listbox.curselection()[0]
+            return self.song_list[song_to_play_index]
+        except IndexError:
+            return None
 
     def play(self):
         """Play selected song"""
         self.stopped = False
 
-        # get active song
-        song_to_play = self.get_song()
-
-        # load and play song
-        pygame.mixer.music.load(song_to_play['path'])
-        pygame.mixer.music.play(loops=0)
-
-        # set slider top value
-        self.song_time(song_to_play)
+        # Try to load song and play it, otherwise throw info
+        try:
+            song_to_play = self.get_song()
+            pygame.mixer.music.load(song_to_play['path'])
+            pygame.mixer.music.play(loops=0)
+            self.song_time(song_to_play)
+        except TypeError:
+            self.info_label.config(text=f"Load list first")
 
     def next(self):
         """Play next song on the playlist"""
@@ -247,7 +244,7 @@ class MusicPlayer(Frame):
         if self.stopped:
             return
         # Song parameters
-        index, name, path, flac_object, length, flength = song.values()
+        name, path, flac_object, length, flength = song.values()
 
         position = int(pygame.mixer.music.get_pos() / 1000)
         fposition = time.strftime('%M:%S', time.gmtime(position))
