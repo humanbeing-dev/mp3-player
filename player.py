@@ -244,8 +244,8 @@ class MusicPlayer(Frame):
 class VolumeFrame(LabelFrame):
     def __init__(self, **kw):
         super().__init__(**kw)
-        self.create_elements()
         self.create_images()
+        self.create_elements()
 
     def create_elements(self):
         self.slider = ttk.Scale(self, value=.25, from_=1, to=0, orient=VERTICAL, command=self.volume,length=200)
@@ -256,7 +256,7 @@ class VolumeFrame(LabelFrame):
         self.image.grid(row=2, column=0, sticky=S)
 
     @staticmethod
-    def create_images(self):
+    def create_images():
         global vol_img_1, vol_img_2, vol_img_3, vol_img_4, vol_img_5
         vol_img_1 = ImageConverter.create_image(f'img/volume1.png', 50)
         vol_img_2 = ImageConverter.create_image(f'img/volume2.png', 50)
